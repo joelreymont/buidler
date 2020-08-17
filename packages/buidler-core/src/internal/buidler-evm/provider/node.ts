@@ -147,8 +147,7 @@ export class BuidlerNode extends EventEmitter {
     solidityVersion?: string,
     allowUnlimitedContractSize?: boolean,
     initialDate?: Date,
-    compilerInput?: CompilerInput,
-    compilerOutput?: CompilerOutput
+    buildInfos?: any[]
   ): Promise<[Common, BuidlerNode]> {
     const stateTrie = new Trie();
     const putIntoStateTrie = promisify(stateTrie.put.bind(stateTrie));
@@ -233,8 +232,7 @@ export class BuidlerNode extends EventEmitter {
       genesisBlock,
       solidityVersion,
       initialDate,
-      compilerInput,
-      compilerOutput
+      buildInfos
     );
 
     return [common, node];
@@ -275,8 +273,7 @@ export class BuidlerNode extends EventEmitter {
     genesisBlock: Block,
     solidityVersion?: string,
     initialDate?: Date,
-    compilerInput?: CompilerInput,
-    compilerOutput?: CompilerOutput
+    buildInfos?: any[]
   ) {
     super();
     const config = getUserConfigPath();
@@ -312,21 +309,23 @@ export class BuidlerNode extends EventEmitter {
 
     if (
       solidityVersion === undefined ||
-      compilerInput === undefined ||
-      compilerOutput === undefined
+      buildInfos === undefined ||
+      buildInfos.length === 0
     ) {
       return;
     }
 
     try {
-      const bytecodes = createModelsAndDecodeBytecodes(
-        solidityVersion,
-        compilerInput,
-        compilerOutput
-      );
+      for (const buildInfo of buildInfos) {
+        const bytecodes = createModelsAndDecodeBytecodes(
+          solidityVersion,
+          buildInfo.input,
+          buildInfo.output
+        );
 
-      for (const bytecode of bytecodes) {
-        this._vmTraceDecoder.addBytecode(bytecode);
+        for (const bytecode of bytecodes) {
+          this._vmTraceDecoder.addBytecode(bytecode);
+        }
       }
     } catch (error) {
       console.warn(

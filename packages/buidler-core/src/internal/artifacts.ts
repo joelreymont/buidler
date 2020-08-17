@@ -109,6 +109,15 @@ function isFullyQualified(name: string) {
   return name.includes(":");
 }
 
+async function getAllArtifacts(artifactsPath: string): Promise<string[]> {
+  const artifactFiles = await glob(path.join(artifactsPath, "**/*.json"));
+  const buildInfoFiles = new Set(
+    await glob(path.join(artifactsPath, "build-info", "*.json"))
+  );
+
+  return artifactFiles.filter((file) => !buildInfoFiles.has(file));
+}
+
 async function getArtifactPath(
   artifactsPath: string,
   name: string
@@ -117,7 +126,7 @@ async function getArtifactPath(
     return getArtifactPathFromFullyQualifiedName(artifactsPath, name);
   }
 
-  const files = await glob(path.join(artifactsPath, "**/*.json"));
+  const files = await getAllArtifacts(artifactsPath);
   return getArtifactPathFromFiles(artifactsPath, name, files);
 }
 
@@ -154,7 +163,8 @@ export function getArtifactPathSync(
 export async function saveArtifact(
   artifactsPath: string,
   globalName: string,
-  artifact: Artifact
+  artifact: Artifact,
+  pathToBuildInfo: string
 ) {
   const fullyQualifiedName = `${globalName}:${artifact.contractName}`;
   const artifactPath = getArtifactPathFromFullyQualifiedName(
@@ -162,11 +172,26 @@ export async function saveArtifact(
     fullyQualifiedName
   );
 
+  const dbgPath = artifactPath.replace(/json$/, "dbg");
+
   await fsExtra.ensureDir(path.dirname(artifactPath));
 
   await fsExtra.writeJSON(artifactPath, artifact, {
     spaces: 2,
   });
+
+  const relativePathToBuildInfo = path.relative(
+    path.dirname(artifactPath),
+    pathToBuildInfo
+  );
+
+  await fsExtra.writeJSON(
+    dbgPath,
+    { buildInfo: relativePathToBuildInfo },
+    {
+      spaces: 2,
+    }
+  );
 }
 
 /**

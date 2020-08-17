@@ -19,36 +19,20 @@ export async function watchCompilerOutput(
 ) {
   const chokidar = await import("chokidar");
 
-  const solcInputPath = path.join(paths.cache, SOLC_INPUT_FILENAME);
-  const solcOutputPath = path.join(paths.cache, SOLC_OUTPUT_FILENAME);
+  const buildInfoDir = path.join(paths.artifacts, "build-info");
 
-  const addCompilationResult = async () => {
-    if (
-      !(await fsExtra.pathExists(path.join(paths.cache, SOLC_INPUT_FILENAME)))
-    ) {
-      return false;
-    }
-
-    if (
-      !(await fsExtra.pathExists(path.join(paths.cache, SOLC_OUTPUT_FILENAME)))
-    ) {
-      return false;
-    }
-
+  const addCompilationResult = async (buildInfo: string) => {
     try {
       log("Adding new compilation result to the node");
 
-      const compilerInput = await fsExtra.readJSON(solcInputPath, {
-        encoding: "utf8",
-      });
-      const compilerOutput = await fsExtra.readJSON(solcOutputPath, {
+      const { input, output } = await fsExtra.readJSON(buildInfo, {
         encoding: "utf8",
       });
 
       await provider.send("buidler_addCompilationResult", [
         compilerVersion,
-        compilerInput,
-        compilerOutput,
+        input,
+        output,
       ]);
     } catch (error) {
       console.warn(
@@ -66,16 +50,15 @@ export async function watchCompilerOutput(
     }
   };
 
-  log(`Watching changes on '${solcOutputPath}'`);
+  log(`Watching changes on '${buildInfoDir}'`);
 
   chokidar
-    .watch(solcOutputPath, {
+    .watch(buildInfoDir, {
       ignoreInitial: true,
       awaitWriteFinish: {
         stabilityThreshold: 250,
         pollInterval: 50,
       },
     })
-    .on("add", addCompilationResult)
-    .on("change", addCompilationResult);
+    .on("add", addCompilationResult);
 }

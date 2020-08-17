@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { sha256 } from "ethereum-cryptography/sha256";
 import fsExtra from "fs-extra";
 import { cloneDeep } from "lodash";
 import path from "path";
@@ -27,7 +28,7 @@ import { Parser } from "../internal/solidity/parse";
 import { ResolvedFile, Resolver } from "../internal/solidity/resolver";
 import { glob } from "../internal/util/glob";
 import { pluralize } from "../internal/util/strings";
-import { ResolvedBuidlerConfig } from "../types";
+import { ResolvedBuidlerConfig, SolcInput } from "../types";
 
 import { TASK_COMPILE } from "./task-names";
 import {
@@ -166,7 +167,7 @@ export default function () {
           throw new BuidlerError(ERRORS.BUILTIN_TASKS.COMPILE_FAILURE);
         }
 
-        await cacheSolcJsonFiles(config, input, output);
+        const pathToBuildInfo = await saveBuildInfo(config, input, output);
 
         if (output === undefined) {
           return;
@@ -192,7 +193,8 @@ export default function () {
             await saveArtifact(
               config.paths.artifacts,
               file.globalName,
-              artifact
+              artifact,
+              pathToBuildInfo
             );
 
             emittedArtifacts.push(artifact.contractName);
@@ -221,6 +223,8 @@ export default function () {
         newSolidityFilesCache
       );
 
+      await removeObsoleteBuildInfos(config.paths.artifacts);
+
       writeSolidityFilesCache(config.paths, newSolidityFilesCache);
     });
 }
@@ -241,11 +245,37 @@ async function removeObsoleteArtifacts(
     }
   }
 
-  const existingArtifacts = await glob(path.join(artifactsPath, "**/*.json"));
+  const artifactFiles = await glob(path.join(artifactsPath, "**/*.json"));
+  const buildInfoFiles = new Set(
+    await glob(path.join(artifactsPath, "build-info", "**/*.json"))
+  );
+  const existingArtifacts = artifactFiles.filter(
+    (file) => !buildInfoFiles.has(file)
+  );
 
   for (const artifact of existingArtifacts) {
     if (!validArtifacts.has(artifact)) {
       fsExtra.unlinkSync(artifact);
+    }
+  }
+}
+
+async function removeObsoleteBuildInfos(artifactsPath: string) {
+  const dbgFiles = await glob(path.join(artifactsPath, "**/*.dbg"));
+
+  const validBuildInfos = new Set<string>();
+  for (const dbgFile of dbgFiles) {
+    const { buildInfo } = await fsExtra.readJson(dbgFile);
+    validBuildInfos.add(path.resolve(path.dirname(dbgFile), buildInfo));
+  }
+
+  const buildInfoFiles = await glob(
+    path.join(artifactsPath, "build-info", "**/*.json")
+  );
+
+  for (const buildInfoFile of buildInfoFiles) {
+    if (!validBuildInfos.has(buildInfoFile)) {
+      await fsExtra.unlink(buildInfoFile);
     }
   }
 }
@@ -317,4 +347,22 @@ ${compilationGroupsFailure.other.map((x) => `* ${x}`).join("\n")}
 `;
   }
   return errorMessage;
+}
+
+async function saveBuildInfo(
+  config: ResolvedBuidlerConfig,
+  input: SolcInput,
+  output: any
+): Promise<string> {
+  const buildInfoDir = path.join(config.paths.artifacts, "build-info");
+
+  await fsExtra.ensureDir(buildInfoDir);
+
+  const hash = sha256(Buffer.from(JSON.stringify(input))).toString("hex");
+
+  const buildInfoPath = path.join(buildInfoDir, `${hash}.json`);
+
+  await fsExtra.writeJson(buildInfoPath, { input, output });
+
+  return buildInfoPath;
 }

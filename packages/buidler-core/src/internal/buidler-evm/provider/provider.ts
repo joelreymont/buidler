@@ -29,6 +29,7 @@ import { ModulesLogger } from "./modules/logger";
 import { NetModule } from "./modules/net";
 import { Web3Module } from "./modules/web3";
 import { BuidlerNode, GenesisAccount, SolidityTracerOptions } from "./node";
+import { glob } from "../../util/glob";
 
 const log = debug("buidler:core:buidler-evm:provider");
 
@@ -215,8 +216,7 @@ export class BuidlerEVMProvider extends EventEmitter
       return;
     }
 
-    let compilerInput: CompilerInput | undefined;
-    let compilerOutput: CompilerOutput | undefined;
+    const buildInfos: any[] = [];
 
     if (this._solcVersion !== undefined && this._paths !== undefined) {
       if (semver.lt(this._solcVersion, FIRST_SOLC_VERSION_SUPPORTED)) {
@@ -226,42 +226,24 @@ export class BuidlerEVMProvider extends EventEmitter
           )
         );
       } else {
-        let hasCompiledContracts = false;
+        const buildInfoDir = path.join(this._paths.artifacts, "build-info");
+        const buildInfoFiles = await glob(path.join(buildInfoDir, "*.json"));
 
-        if (await fsExtra.pathExists(this._paths.artifacts)) {
-          const artifactsDir = await fsExtra.readdir(this._paths.artifacts);
-          hasCompiledContracts = artifactsDir.some((f) => f.endsWith(".json"));
-        }
-
-        if (hasCompiledContracts) {
-          try {
-            const solcInputPath = path.join(
-              this._paths.cache,
-              SOLC_INPUT_FILENAME
-            );
-            const solcOutputPath = path.join(
-              this._paths.cache,
-              SOLC_OUTPUT_FILENAME
-            );
-
-            compilerInput = await fsExtra.readJSON(solcInputPath, {
-              encoding: "utf8",
-            });
-            compilerOutput = await fsExtra.readJSON(solcOutputPath, {
-              encoding: "utf8",
-            });
-          } catch (error) {
-            console.warn(
-              chalk.yellow(
-                "Stack traces engine could not be initialized. Run Buidler with --verbose to learn more."
-              )
-            );
-
-            log(
-              "Solidity stack traces disabled: Failed to read solc's input and output files. Please report this to help us improve Buidler.\n",
-              error
-            );
+        try {
+          for (const buildInfoFile of buildInfoFiles) {
+            buildInfos.push(await fsExtra.readJson(buildInfoFile));
           }
+        } catch (error) {
+          console.warn(
+            chalk.yellow(
+              "Stack traces engine could not be initialized. Run Buidler with --verbose to learn more."
+            )
+          );
+
+          log(
+            "Solidity stack traces disabled: Failed to read solc's input and output files. Please report this to help us improve Buidler.\n",
+            error
+          );
         }
       }
     }
@@ -276,8 +258,7 @@ export class BuidlerEVMProvider extends EventEmitter
       this._solcVersion,
       this._allowUnlimitedContractSize,
       this._initialDate,
-      compilerInput,
-      compilerOutput
+      buildInfos
     );
 
     this._common = common;
